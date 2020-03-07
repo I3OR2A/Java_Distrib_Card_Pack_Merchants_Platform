@@ -66,6 +66,12 @@
             <groupId>com.spring4all</groupId>
             <artifactId>spring-boot-starter-hbase</artifactId>
             <version>1.0.0.RELEASE</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>jdk.tools</groupId>
+                    <artifactId>jdk.tools</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.yaml</groupId>
