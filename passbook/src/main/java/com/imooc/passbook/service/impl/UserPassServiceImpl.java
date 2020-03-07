@@ -1,5 +1,6 @@
 package com.imooc.passbook.service.impl;
 
+import com.alibaba.fastjson.JSON;
 import com.imooc.passbook.constant.Constants;
 import com.imooc.passbook.constant.PassStatus;
 import com.imooc.passbook.dao.MerchantsDao;
@@ -12,20 +13,16 @@ import com.imooc.passbook.vo.PassTemplate;
 import com.imooc.passbook.vo.Response;
 import com.spring4all.spring.boot.starter.hbase.api.HbaseTemplate;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang.time.DateFormatUtils;
 import org.apache.commons.lang.time.DateUtils;
 import org.apache.hadoop.hbase.TableName;
-import org.apache.hadoop.hbase.client.Get;
-import org.apache.hadoop.hbase.client.Result;
-import org.apache.hadoop.hbase.client.Scan;
+import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.filter.*;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -54,22 +51,63 @@ public class UserPassServiceImpl implements IUserPassService {
 
     @Override
     public Response getUserPassInfo(Long userId) throws Exception {
-        return null;
+        return getPassInfoByStatus(userId, PassStatus.UNUSED);
     }
 
     @Override
     public Response getUserUsedPassInfo(Long userId) throws Exception {
-        return null;
+        return getPassInfoByStatus(userId, PassStatus.USED);
     }
 
     @Override
     public Response getUserAllPassInfo(Long userId) throws Exception {
-        return null;
+        return getPassInfoByStatus(userId, PassStatus.ALL);
     }
 
     @Override
     public Response userUsePass(Pass pass) {
-        return null;
+        // 根据 userId 构造行键前缀
+        byte[] rowPrefix = Bytes.toBytes(new StringBuilder(
+                String.valueOf(pass.getUserId())).reverse().toString());
+        Scan scan = new Scan();
+        List<Filter> filters = new ArrayList<>();
+        filters.add(new PrefixFilter(rowPrefix));
+        filters.add(new SingleColumnValueFilter(
+                Constants.PassTable.FAMILY_I.getBytes(),
+                Constants.PassTable.TEMPLATE_ID.getBytes(),
+                CompareFilter.CompareOp.EQUAL,
+                Bytes.toBytes(pass.getTemplateId())
+        ));
+        filters.add(new SingleColumnValueFilter(
+                Constants.PassTable.FAMILY_I.getBytes(),
+                Constants.PassTable.CON_DATE.getBytes(),
+                CompareFilter.CompareOp.EQUAL,
+                Bytes.toBytes("-1")
+        ));
+
+        scan.setFilter(new FilterList(filters));
+
+        List<Pass> passes = hbaseTemplate.find(Constants.PassTable.TABLE_NAME,
+                scan, new PassRowMapper());
+
+        if (null == passes || passes.size() != 1) {
+            log.error("UserUsePass Error: {}", JSON.toJSONString(pass));
+            return Response.failure("UserUsePass Error");
+        }
+
+        byte[] FAMILY_I = Constants.PassTable.FAMILY_I.getBytes();
+        byte[] CON_DATE = Constants.PassTable.CON_DATE.getBytes();
+
+        List<Mutation> datas = new ArrayList<>();
+        Put put = new Put(passes.get(0).getRowKey().getBytes());
+        put.addColumn(FAMILY_I, CON_DATE,
+                Bytes.toBytes(DateFormatUtils.ISO_DATE_FORMAT.format(new Date()))
+        );
+        datas.add(put);
+
+        hbaseTemplate.saveOrUpdates(Constants.PassTable.TABLE_NAME, datas);
+
+        return Response.success();
     }
 
 
